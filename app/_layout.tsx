@@ -55,6 +55,8 @@ function RootLayoutNav() {
       <Stack.Screen name="sign-in" options={{ headerShown: false, presentation: "modal" }} />
       <Stack.Screen name="forgot-password" options={{ headerShown: false, presentation: "modal" }} />
       <Stack.Screen name="verification" options={{ headerShown: false }} />
+      <Stack.Screen name="booking" options={{ headerShown: false }} />
+      <Stack.Screen name="payment-callback" options={{ headerShown: false }} />
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
     </Stack>
   )
@@ -96,12 +98,13 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
       segments[0] === "forgot-password"
     const inTabsGroup = segments[0] === "(tabs)"
     const inVerificationScreen = segments[0] === "verification"
+    const inPaymentFlow = segments[0] === "booking" || segments[0] === "payment-callback"
 
     if (!session && !inAuthGroup) {
       // If not authenticated and not in auth group, redirect to sign in
       router.replace("/")
-    } else if (session && !inTabsGroup && !inVerificationScreen) {
-      // If authenticated but not in tabs or verification, check if verified
+    } else if (session && !inTabsGroup && !inVerificationScreen && !inPaymentFlow) {
+      // If authenticated but not in tabs or verification or payment, check if verified
       supabase
         .from("profiles")
         .select("is_verified")

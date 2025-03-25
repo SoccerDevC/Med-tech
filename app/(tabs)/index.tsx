@@ -1,12 +1,13 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Image } from "react-native"
+import { useState, useEffect, useRef } from "react"
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Image, Modal } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { Ionicons } from "@expo/vector-icons"
 import { supabase } from "../../utils/supabase"
+import { WebView } from "react-native-webview"
 
-// Add interface for appointment
+// Add interfaces for data types
 interface Appointment {
   date: string
   specialist?: {
@@ -14,12 +15,53 @@ interface Appointment {
   }
 }
 
+interface Specialist {
+  id: string
+  full_name: string
+  specialty: string
+  rating: number
+  avatar_url?: string
+}
+
 export default function HomeScreen() {
   const [userName, setUserName] = useState("")
   const [greeting, setGreeting] = useState("")
-  // Update the state declaration
   const [upcomingAppointment, setUpcomingAppointment] = useState<Appointment | null>(null)
   const [verificationStatus, setVerificationStatus] = useState("pending")
+  const [showPaymentModal, setShowPaymentModal] = useState(false)
+  const webViewRef = useRef(null)
+
+  // Define specialists with real data
+  const specialists: Specialist[] = [
+    {
+      id: "1",
+      full_name: "Grace Nambatya",
+      specialty: "Herbal Medicine",
+      rating: 4.9,
+      avatar_url: "https://via.placeholder.com/80",
+    },
+    {
+      id: "2",
+      full_name: "Kato Martin",
+      specialty: "Traditional Medicine",
+      rating: 4.8,
+      avatar_url: "https://via.placeholder.com/80",
+    },
+    {
+      id: "3",
+      full_name: "Sarah Nabukenya",
+      specialty: "Nutritional Herbalist",
+      rating: 4.7,
+      avatar_url: "https://via.placeholder.com/80",
+    },
+    {
+      id: "4",
+      full_name: "John Musisi",
+      specialty: "Medicinal Plants",
+      rating: 4.6,
+      avatar_url: "https://via.placeholder.com/80",
+    },
+  ]
 
   useEffect(() => {
     // Set greeting based on time of day
@@ -68,6 +110,47 @@ export default function HomeScreen() {
     } catch (error) {
       console.error("Error fetching user data:", error)
     }
+  }
+
+  const handleBookConsultation = () => {
+    setShowPaymentModal(true)
+  }
+
+  const handlePaymentClose = () => {
+    setShowPaymentModal(false)
+  }
+
+  const handlePaymentSuccess = async (data: any) => {
+    // Process successful payment
+    console.log("Payment successful:", data)
+
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+
+      if (user) {
+        // Create a consultation record
+        const { error } = await supabase.from("consultations").insert({
+          patient_id: user.id,
+          specialist_id: specialists[0].id, // Default to first specialist or let user choose
+          date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // Schedule for 1 week from now
+          status: "scheduled",
+          notes: "Booked via Pesapal payment",
+        })
+
+        if (error) {
+          console.error("Error creating consultation:", error)
+        } else {
+          // Refresh user data to show the new appointment
+          fetchUserData()
+        }
+      }
+    } catch (error) {
+      console.error("Error processing payment:", error)
+    }
+
+    setShowPaymentModal(false)
   }
 
   return (
@@ -140,14 +223,14 @@ export default function HomeScreen() {
           <View style={styles.noAppointmentCard}>
             <Ionicons name="calendar" size={40} color="#1a5276" />
             <Text style={styles.noAppointmentText}>No upcoming consultations</Text>
-            <TouchableOpacity style={styles.bookButton}>
+            <TouchableOpacity style={styles.bookButton} onPress={handleBookConsultation}>
               <Text style={styles.bookButtonText}>Book a Consultation</Text>
             </TouchableOpacity>
           </View>
         )}
 
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Herbal Specialists</Text>
+          <Text style={styles.sectionTitle}>Our Specialists</Text>
           <TouchableOpacity>
             <Text style={styles.viewAllText}>View All</Text>
           </TouchableOpacity>
@@ -158,14 +241,14 @@ export default function HomeScreen() {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.specialistsContainer}
         >
-          {[1, 2, 3, 4].map((item) => (
-            <TouchableOpacity key={item} style={styles.specialistCard}>
-              <Image source={{ uri: `/placeholder.svg?height=80&width=80` }} style={styles.specialistImage} />
-              <Text style={styles.specialistName}>Dr. Name {item}</Text>
-              <Text style={styles.specialistSpecialty}>Herbal Specialist</Text>
+          {specialists.map((specialist) => (
+            <TouchableOpacity key={specialist.id} style={styles.specialistCard}>
+              <Image source={{ uri: specialist.avatar_url }} style={styles.specialistImage} />
+              <Text style={styles.specialistName}>Dr. {specialist.full_name}</Text>
+              <Text style={styles.specialistSpecialty}>{specialist.specialty}</Text>
               <View style={styles.ratingContainer}>
                 <Ionicons name="star" size={14} color="#f39c12" />
-                <Text style={styles.ratingText}>4.{item + 4}</Text>
+                <Text style={styles.ratingText}>{specialist.rating.toFixed(1)}</Text>
               </View>
             </TouchableOpacity>
           ))}
@@ -180,7 +263,7 @@ export default function HomeScreen() {
 
         {[1, 2].map((item) => (
           <TouchableOpacity key={item} style={styles.articleCard}>
-            <Image source={{ uri: `/placeholder.svg?height=120&width=120` }} style={styles.articleImage} />
+            <Image source={{ uri: "https://via.placeholder.com/80" }} style={styles.articleImage} />
             <View style={styles.articleContent}>
               <Text style={styles.articleTitle}>
                 {item === 1 ? "Benefits of Herbal Medicine" : "Natural Remedies for Common Ailments"}
@@ -195,6 +278,30 @@ export default function HomeScreen() {
           </TouchableOpacity>
         ))}
       </ScrollView>
+
+      {/* Payment Modal with Pesapal Integration */}
+      <Modal visible={showPaymentModal} animationType="slide" transparent={false} onRequestClose={handlePaymentClose}>
+        <SafeAreaView style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Book Consultation</Text>
+            <TouchableOpacity onPress={handlePaymentClose}>
+              <Ionicons name="close" size={24} color="#333" />
+            </TouchableOpacity>
+          </View>
+
+          <WebView
+            ref={webViewRef}
+            source={{ uri: "https://store.pesapal.com/medtechengineeringfinancialsol" }}
+            style={styles.webView}
+            onNavigationStateChange={(navState) => {
+              // Check for successful payment
+              if (navState.url.includes("success") || navState.url.includes("callback")) {
+                handlePaymentSuccess(navState)
+              }
+            }}
+          />
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   )
 }
@@ -313,7 +420,6 @@ const styles = StyleSheet.create({
     color: "#666",
     marginBottom: 5,
   },
-
   appointmentActions: {
     flexDirection: "row",
   },
@@ -464,6 +570,27 @@ const styles = StyleSheet.create({
   articleDate: {
     fontSize: 12,
     color: "#999",
+  },
+  // Modal styles
+  modalContainer: {
+    flex: 1,
+    backgroundColor: "white",
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "#333",
+  },
+  webView: {
+    flex: 1,
   },
 })
 

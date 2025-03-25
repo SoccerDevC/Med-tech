@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import {
   StyleSheet,
   View,
@@ -18,10 +18,12 @@ import { Ionicons } from "@expo/vector-icons"
 import DateTimePicker from "@react-native-community/datetimepicker"
 import { format } from "date-fns"
 import { supabase } from "../utils/supabase"
+import AsyncStorage from "@react-native-async-storage/async-storage"
 
 export default function VerificationScreen() {
   const router = useRouter()
   const [isLoading, setIsLoading] = useState(false)
+  const [verificationChecked, setVerificationChecked] = useState(false)
 
   // Form fields
   const [fullName, setFullName] = useState("")
@@ -40,6 +42,68 @@ export default function VerificationScreen() {
   const [healthIssue, setHealthIssue] = useState("")
   const [herbalHistory, setHerbalHistory] = useState("")
   const [privacyAgreement, setPrivacyAgreement] = useState(false)
+
+  // Check if verification has already been submitted
+  useEffect(() => {
+    const checkVerificationStatus = async () => {
+      try {
+        // First check if we've already verified this in the current session
+        const verificationStatus = await AsyncStorage.getItem("@verification_submitted")
+
+        if (verificationStatus === "true") {
+          // User has already submitted verification in this session
+          router.replace("/(tabs)")
+          return
+        }
+
+        // If not in AsyncStorage, check with Supabase
+        const {
+          data: { user },
+        } = await supabase.auth.getUser()
+
+        if (!user) {
+          // No user logged in, redirect to login
+          router.replace("/sign-in")
+          return
+        }
+
+        // Check if user has already submitted verification
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("verification_submitted, is_verified")
+          .eq("id", user.id)
+          .single()
+
+        if (profile && (profile.verification_submitted || profile.is_verified)) {
+          // User has already submitted verification or is verified, store in AsyncStorage and redirect
+          await AsyncStorage.setItem("@verification_submitted", "true")
+          router.replace("/(tabs)")
+          return
+        }
+
+        // Pre-fill form with user data if available
+        if (user.user_metadata) {
+          setFullName(user.user_metadata.full_name || "")
+          setEmail(user.email || "")
+          if (user.user_metadata.date_of_birth) {
+            try {
+              setDateOfBirth(new Date(user.user_metadata.date_of_birth))
+            } catch (e) {
+              console.error("Error parsing date of birth:", e)
+            }
+          }
+        }
+
+        // If we get here, user needs to complete verification
+        setVerificationChecked(true)
+      } catch (error) {
+        console.error("Error checking verification status:", error)
+        setVerificationChecked(true) // Show form on error to be safe
+      }
+    }
+
+    checkVerificationStatus()
+  }, [])
 
   const handleDateChange = (event: any, selectedDate?: Date) => {
     const currentDate = selectedDate || dateOfBirth
@@ -126,9 +190,14 @@ export default function VerificationScreen() {
           .from("profiles")
           .update({
             verification_submitted: true,
+            full_name: fullName,
+            date_of_birth: format(dateOfBirth, "yyyy-MM-dd"),
           })
           .eq("id", user.id)
       }
+
+      // Store verification status in AsyncStorage to prevent showing this screen again
+      await AsyncStorage.setItem("@verification_submitted", "true")
 
       Alert.alert(
         "Success",
@@ -141,6 +210,16 @@ export default function VerificationScreen() {
     } finally {
       setIsLoading(false)
     }
+  }
+
+  // Show loading indicator while checking verification status
+  if (!verificationChecked) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#1a5276" />
+        <Text style={styles.loadingText}>Checking verification status...</Text>
+      </View>
+    )
   }
 
   return (
@@ -500,6 +579,17 @@ const styles = StyleSheet.create({
     color: "white",
     fontSize: 16,
     fontWeight: "600",
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "white",
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: "#666",
   },
 })
 

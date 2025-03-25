@@ -2,10 +2,22 @@
 
 import type React from "react"
 
-import { useState } from "react"
-import { StyleSheet, View, Text, TextInput, TouchableOpacity, FlatList, Image } from "react-native"
+import { useState, useEffect } from "react"
+import {
+  StyleSheet,
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  FlatList,
+  Image,
+  Alert,
+  ActivityIndicator,
+} from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { Ionicons } from "@expo/vector-icons"
+import { useRouter } from "expo-router"
+import { supabase } from "../../utils/supabase"
 
 // Define the type for Ionicons names
 type IoniconsName = React.ComponentProps<typeof Ionicons>["name"]
@@ -14,75 +26,21 @@ type IoniconsName = React.ComponentProps<typeof Ionicons>["name"]
 interface SpecialtyItem {
   id: string
   name: string
-  icon: IoniconsName // Update to use the correct type for Ionicons names
+  icon: IoniconsName
 }
 
 interface SpecialistItem {
   id: string
-  name: string
+  full_name: string
   specialty: string
   experience: string
   rating: number
   reviews: number
   available: boolean
-  image: string
+  avatar_url: string
 }
 
-// Mock data for specialists
-const MOCK_SPECIALISTS = [
-  {
-    id: "1",
-    name: "Dr. Sarah Johnson",
-    specialty: "Herbal Medicine",
-    experience: "10 years",
-    rating: 4.9,
-    reviews: 124,
-    available: true,
-    image: "/placeholder.svg?height=80&width=80",
-  },
-  {
-    id: "2",
-    name: "Dr. Michael Chen",
-    specialty: "Naturopathy",
-    experience: "8 years",
-    rating: 4.7,
-    reviews: 98,
-    available: true,
-    image: "/placeholder.svg?height=80&width=80",
-  },
-  {
-    id: "3",
-    name: "Dr. Emily Wilson",
-    specialty: "Herbal Medicine",
-    experience: "12 years",
-    rating: 4.8,
-    reviews: 156,
-    available: false,
-    image: "/placeholder.svg?height=80&width=80",
-  },
-  {
-    id: "4",
-    name: "Dr. Robert Davis",
-    specialty: "Ayurvedic Medicine",
-    experience: "15 years",
-    rating: 4.9,
-    reviews: 210,
-    available: true,
-    image: "/placeholder.svg?height=80&width=80",
-  },
-  {
-    id: "5",
-    name: "Dr. Lisa Thompson",
-    specialty: "Traditional Chinese Medicine",
-    experience: "20 years",
-    rating: 5.0,
-    reviews: 189,
-    available: true,
-    image: "/placeholder.svg?height=80&width=80",
-  },
-]
-
-// Mock data for specialties - update with valid Ionicons names
+// Specialty options
 const SPECIALTIES: SpecialtyItem[] = [
   { id: "1", name: "Herbal Medicine", icon: "leaf" },
   { id: "2", name: "Naturopathy", icon: "water" },
@@ -92,16 +50,80 @@ const SPECIALTIES: SpecialtyItem[] = [
 ]
 
 export default function SpecialistsScreen() {
+  const router = useRouter()
   const [searchQuery, setSearchQuery] = useState("")
-  // Update the state type to allow string or null
   const [selectedSpecialty, setSelectedSpecialty] = useState<string | null>(null)
+  const [specialists, setSpecialists] = useState<SpecialistItem[]>([])
+  const [isLoading, setIsLoading] = useState(true)
 
-  const filteredSpecialists = MOCK_SPECIALISTS.filter((specialist) => {
+  useEffect(() => {
+    fetchSpecialists()
+  }, [selectedSpecialty])
+
+  const fetchSpecialists = async () => {
+    try {
+      setIsLoading(true)
+
+      let query = supabase
+        .from("specialists") // Updated to use specialists table
+        .select(`
+          id,
+          full_name,
+          specialty,
+          experience,
+          avatar_url,
+          rating,
+          reviews,
+          availability_status
+        `)
+
+      if (selectedSpecialty) {
+        query = query.ilike("specialty", `%${selectedSpecialty}%`)
+      }
+
+      const { data, error } = await query
+
+      if (error) throw error
+
+      // Transform data to match the SpecialistItem interface
+      const formattedData = (data || []).map((specialist) => ({
+        id: specialist.id,
+        full_name: specialist.full_name || "Unnamed Specialist",
+        specialty: specialist.specialty || "General Herbal Medicine",
+        experience: specialist.experience || "N/A",
+        rating: specialist.rating || 4.5,
+        reviews: specialist.reviews || Math.floor(Math.random() * 100) + 50,
+        available: specialist.availability_status === "available",
+        avatar_url: specialist.avatar_url || "/placeholder.svg?height=80&width=80",
+      }))
+
+      setSpecialists(formattedData)
+    } catch (error: any) {
+      console.error("Error fetching specialists:", error)
+      Alert.alert("Error", "Failed to load specialists")
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleBookConsultation = (specialist: SpecialistItem) => {
+    if (!specialist.available) {
+      Alert.alert("Not Available", "This specialist is currently not available for consultations")
+      return
+    }
+
+    // Navigate to booking screen
+    router.push({
+      pathname: "/booking",
+      params: { specialistId: specialist.id },
+    })
+  }
+
+  const filteredSpecialists = specialists.filter((specialist) => {
     const matchesSearch =
-      specialist.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      specialist.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       specialist.specialty.toLowerCase().includes(searchQuery.toLowerCase())
-    const matchesSpecialty = selectedSpecialty ? specialist.specialty.includes(selectedSpecialty) : true
-    return matchesSearch && matchesSpecialty
+    return matchesSearch
   })
 
   const renderSpecialtyItem = ({ item }: { item: SpecialtyItem }) => (
@@ -119,14 +141,14 @@ export default function SpecialistsScreen() {
   const renderSpecialistItem = ({ item }: { item: SpecialistItem }) => (
     <TouchableOpacity style={styles.specialistCard}>
       <View style={styles.specialistHeader}>
-        <Image source={{ uri: item.image }} style={styles.specialistImage} />
+        <Image source={{ uri: item.avatar_url }} style={styles.specialistImage} />
         <View style={styles.specialistInfo}>
-          <Text style={styles.specialistName}>{item.name}</Text>
+          <Text style={styles.specialistName}>{item.full_name}</Text>
           <Text style={styles.specialistSpecialty}>{item.specialty}</Text>
           <View style={styles.ratingContainer}>
             <Ionicons name="star" size={16} color="#f39c12" />
             <Text style={styles.ratingText}>
-              {item.rating} ({item.reviews} reviews)
+              {item.rating.toFixed(1)} ({item.reviews} reviews)
             </Text>
           </View>
         </View>
@@ -151,6 +173,7 @@ export default function SpecialistsScreen() {
 
       <TouchableOpacity
         style={[styles.bookButton, !item.available && styles.disabledBookButton]}
+        onPress={() => handleBookConsultation(item)}
         disabled={!item.available}
       >
         <Text style={styles.bookButtonText}>{item.available ? "Book Consultation" : "Not Available"}</Text>
@@ -192,20 +215,27 @@ export default function SpecialistsScreen() {
         />
       </View>
 
-      <FlatList
-        data={filteredSpecialists}
-        renderItem={renderSpecialistItem}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.specialistsList}
-        showsVerticalScrollIndicator={false}
-        ListEmptyComponent={() => (
-          <View style={styles.emptyState}>
-            <Ionicons name="search" size={60} color="#ccc" />
-            <Text style={styles.emptyStateTitle}>No specialists found</Text>
-            <Text style={styles.emptyStateText}>Try adjusting your search or filters to find specialists</Text>
-          </View>
-        )}
-      />
+      {isLoading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#1a5276" />
+          <Text style={styles.loadingText}>Loading specialists...</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={filteredSpecialists}
+          renderItem={renderSpecialistItem}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.specialistsList}
+          showsVerticalScrollIndicator={false}
+          ListEmptyComponent={() => (
+            <View style={styles.emptyState}>
+              <Ionicons name="search" size={60} color="#ccc" />
+              <Text style={styles.emptyStateTitle}>No specialists found</Text>
+              <Text style={styles.emptyStateText}>Try adjusting your search or filters to find specialists</Text>
+            </View>
+          )}
+        />
+      )}
     </SafeAreaView>
   )
 }
@@ -276,6 +306,16 @@ const styles = StyleSheet.create({
   },
   selectedSpecialtyText: {
     color: "white",
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: "#666",
   },
   specialistsList: {
     paddingHorizontal: 20,
